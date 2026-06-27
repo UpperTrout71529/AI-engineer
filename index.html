@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Генератор смет | MVP</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased min-h-screen flex items-center justify-center p-4">
 
     <div class="bg-white p-8 sm:p-10 rounded-2xl shadow-sm border border-gray-100 max-w-lg w-full">
         <h1 class="text-2xl font-medium mb-2">Генерация сметы</h1>
-        <p class="text-gray-500 text-sm mb-8">Загрузите PDF-проект электрики. Система распознает спецификации, найдет актуальные цены на маркетплейсах и соберет Excel-файл.</p>
+        <p class="text-gray-500 text-sm mb-8">Загрузите PDF-проект электрики. Система распознает спецификации через Gemini ИИ, найдет актуальные цены через ScrapingAnt на ETM и соберет Excel-файл со стилями и формулами.</p>
 
         <form id="uploadForm" class="space-y-6">
             <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors relative">
@@ -20,25 +20,25 @@
                     <svg class="w-10 h-10 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                     </svg>
-                    <span class="text-sm font-medium text-gray-700" id="fileName">Выберите PDF-файл</span>
+                    <span class="text-sm font-medium text-gray-700" id="fileName">Выберите PDF-файл проекта</span>
                     <span class="text-xs text-gray-400 mt-1">до 10 MB</span>
                 </div>
             </div>
 
-            <button type="submit" id="submitBtn" class="w-full bg-black text-white py-3.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors focus:outline-none focus:ring-4 focus:ring-gray-200 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white py-3.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
                 Запустить обработку
             </button>
         </form>
 
         <div id="status" class="mt-6 text-sm flex flex-col items-center space-y-3 hidden">
-            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-black"></div>
-            <span id="statusText" class="text-gray-600 font-medium">Анализ документа через Gemini...</span>
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <span id="statusText" class="text-gray-600 font-medium text-center">Анализ документа через Gemini...</span>
         </div>
     </div>
 
     <script>
-        // ВНИМАНИЕ: Сюда нужно будет вставить URL вебхука от Latenode
-        const LATENODE_WEBHOOK_URL = 'https://webhook.latenode.com/your-webhook-id';
+        // ВСТАВЬТЕ СЮДА ВАШ URL ИЗ GOOGLE APPS SCRIPT
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/ВАШ_ID_СКРИПТА/exec';
 
         const pdfInput = document.getElementById('pdfInput');
         const fileNameDisplay = document.getElementById('fileName');
@@ -47,16 +47,14 @@
         const statusDiv = document.getElementById('status');
         const statusText = document.getElementById('statusText');
 
-        // Обновление имени файла при выборе
         pdfInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 fileNameDisplay.textContent = e.target.files[0].name;
             } else {
-                fileNameDisplay.textContent = 'Выберите PDF-файл';
+                fileNameDisplay.textContent = 'Выберите PDF-файл проекта';
             }
         });
 
-        // Конвертация файла в Base64 для отправки через JSON
         const toBase64 = file => new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
@@ -69,125 +67,189 @@
             const file = pdfInput.files[0];
             if (!file) return;
 
-            // Блокируем кнопку и показываем лоадер
             submitBtn.disabled = true;
             statusDiv.classList.remove('hidden');
             
             try {
-                statusText.textContent = 'Чтение файла...';
+                statusText.innerHTML = 'Шаг 1/2: Нейросеть Gemini читает PDF схемы...<br><span class="text-xs text-gray-400">Это может занять до 30 секунд</span>';
                 const base64File = await toBase64(file);
 
-                statusText.textContent = 'Отправка данных на сервер (Latenode)...';
+                statusText.innerHTML = 'Шаг 2/2: Парсим цены на маркетплейсе через ScrapingAnt...<br><span class="text-xs text-gray-400">Обходим защиту Cloudflare</span>';
                 
-                // Отправка запроса на вебхук Latenode
-                const response = await fetch(LATENODE_WEBHOOK_URL, {
+                // Делаем запрос к нашему бесплатному бэкенду в Google
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'text/plain' }, // Для GAS важно слать text/plain для избежания preflight ошибок CORS
                     body: JSON.stringify({ 
                         fileName: file.name,
                         fileData: base64File 
                     })
                 });
 
-                if (!response.ok) throw new Error('Ошибка сервера при обработке');
+                const enrichedData = await response.json();
+                
+                if (enrichedData.error) {
+                    throw new Error(enrichedData.error);
+                }
 
-                statusText.textContent = 'Сбор цен и артикулов...';
-                const enrichedData = await response.json(); // Ожидаем JSON-массив от Latenode
-
-                statusText.textContent = 'Формирование Excel...';
+                statusText.textContent = 'Формирование файла Excel...';
                 generateEstimateExcel(enrichedData);
 
-                statusText.textContent = 'Готово! Смета загружена.';
-                statusDiv.querySelector('.animate-spin').classList.add('hidden'); // Убираем спиннер
+                statusText.textContent = 'Готово! Смета успешно скачана.';
+                statusDiv.querySelector('.animate-spin').classList.add('hidden');
 
             } catch (error) {
                 console.error(error);
-                statusText.textContent = 'Произошла ошибка. Проверьте консоль.';
+                statusText.textContent = 'Произошла ошибка. Проверьте консоли или настройки развертывания.';
                 statusText.classList.add('text-red-500');
             } finally {
                 submitBtn.disabled = false;
-                // Через 3 секунды прячем статус
                 setTimeout(() => {
                     statusDiv.classList.add('hidden');
                     statusText.classList.remove('text-red-500');
                     statusDiv.querySelector('.animate-spin').classList.remove('hidden');
-                }, 3000);
+                }, 5000);
             }
         });
 
-        // Функция сборки Excel (из предыдущего этапа)
+        // Функция построения профессионального Excel-файла с формулами и стилями
         function generateEstimateExcel(enrichedData) {
             const wb = XLSX.utils.book_new();
             const categories = {};
             
-            // Защита: если сервер вернул пустой ответ или ошибку
-            if (!Array.isArray(enrichedData)) {
-                alert("Ошибка структуры данных от сервера.");
-                return;
-            }
-
             enrichedData.forEach(item => {
-                if (!categories[item.category]) categories[item.category] = [];
-                categories[item.category].push(item);
+                const cat = item.category || "Прочее";
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(item);
             });
 
             const sheetData = [];
-            const headers = ["Позиция", "Наименование", "Бренд", "Артикул", "Ед. изм.", "Кол-во", "Цена (руб.)", "Сумма (руб.)", "Ссылка"];
-            let globalRowIndex = 1;
-            const formulaRanges = [];
+            const headers = ["Позиция", "Наименование оборудования / материала", "Бренд", "Артикул", "Ед. изм.", "Кол-во", "Цена (руб.)", "Сумма (руб.)", "Ссылка"];
+            
+            const titleRows = [], headerRows = [], totalRows = [], dataRows = [], formulaRanges = [];
+            let currentRowIndex = 0;
+
+            sheetData.push(["АВТОМАТИЗИРОВАННЫЙ РАСЧЕТ СМЕТЫ МАТЕРИАЛОВ (MVP)"]);
+            titleRows.push(currentRowIndex);
+            sheetData.push([]); 
+            currentRowIndex += 2;
 
             for (const [categoryName, items] of Object.entries(categories)) {
-                sheetData.push([]);
                 sheetData.push([categoryName.toUpperCase()]);
-                globalRowIndex += 2;
+                titleRows.push(currentRowIndex);
+                currentRowIndex++;
                 
                 sheetData.push(headers);
-                const headerRowIndex = ++globalRowIndex;
-                const startRow = globalRowIndex + 1;
+                headerRows.push(currentRowIndex);
+                currentRowIndex++;
+                
+                const startRowXls = currentRowIndex + 1;
                 
                 items.forEach((item, index) => {
                     sheetData.push([
                         index + 1,
                         item.name || "-",
-                        item.brand || "Не указан",
+                        item.brand || "—",
                         item.article || "—",
-                        item.unit || "шт",
+                        item.unit || "шт.",
                         Number(item.quantity || 0),
                         Number(item.price || 0),
-                        "", 
+                        0, 
                         item.url || ""
                     ]);
-                    globalRowIndex++;
+                    dataRows.push(currentRowIndex);
+                    currentRowIndex++;
                 });
                 
-                const endRow = globalRowIndex;
-                sheetData.push(["", "ИТОГО ПО КАТЕГОРИИ:", "", "", "", "", "", "", ""]);
-                globalRowIndex++;
+                const endRowXls = currentRowIndex;
                 
-                formulaRanges.push({ start: startRow, end: endRow, totalRow: globalRowIndex });
+                sheetData.push(["", "ИТОГО ПО КАТЕГОРИИ:", "", "", "", "", "", 0, ""]);
+                totalRows.push(currentRowIndex);
+                
+                formulaRanges.push({ 
+                    start: startRowXls, 
+                    end: endRowXls, 
+                    totalRow: currentRowIndex + 1 
+                });
+                
+                sheetData.push([]); 
+                currentRowIndex++;
             }
 
             const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            const borderStyle = {
+                top: { style: "thin", color: { rgb: "D9D9D9" } },
+                bottom: { style: "thin", color: { rgb: "D9D9D9" } },
+                left: { style: "thin", color: { rgb: "D9D9D9" } },
+                right: { style: "thin", color: { rgb: "D9D9D9" } }
+            };
 
-            // Прописываем формулы
             formulaRanges.forEach(range => {
                 for (let r = range.start; r <= range.end; r++) {
-                    ws[`H${r}`] = { t: 'n', f: `F${r}*G${r}` };
+                    ws[`H${r}`] = { t: 'n', f: `F${r}*G${r}`, s: { numFmt: "#,##0.00", border: borderStyle } };
+                    
                     const urlCellRef = `I${r}`;
                     if (ws[urlCellRef] && ws[urlCellRef].v && ws[urlCellRef].v.toString().startsWith('http')) {
-                        ws[urlCellRef] = { t: 's', v: "Открыть", l: { target: ws[urlCellRef].v } };
+                        ws[urlCellRef] = { 
+                            t: 's', 
+                            v: "Купить на ETM", 
+                            l: { target: ws[urlCellRef].v },
+                            s: { font: { color: { rgb: "1B365D" }, underline: true }, alignment: { horizontal: "center" }, border: borderStyle }
+                        };
                     }
                 }
-                ws[`H${range.totalRow}`] = { t: 'n', f: `SUM(H${range.start}:H${range.end})` };
+                ws[`H${range.totalRow}`] = { 
+                    t: 'n', 
+                    f: `SUM(H${range.start}:H${range.end})`,
+                    s: { font: { bold: true }, fill: { fgColor: { rgb: "F2F2F2" } }, numFmt: "#,##0.00", border: borderStyle } 
+                };
+            });
+
+            Object.keys(ws).forEach(cellRef => {
+                if (cellRef[0] === '!') return;
+                const cell = ws[cellRef];
+                const row = parseInt(cellRef.replace(/[^0-9]/g, '')) - 1;
+
+                if (!cell.s) cell.s = {};
+
+                if (titleRows.includes(row)) {
+                    cell.s = {
+                        font: { bold: true, size: 12, color: { rgb: "FFFFFF" } },
+                        fill: { fgColor: { rgb: "1F4E79" } },
+                        alignment: { horizontal: "left", vertical: "center" }
+                    };
+                } else if (headerRows.includes(row)) {
+                    cell.s = {
+                        font: { bold: true, size: 10, color: { rgb: "FFFFFF" } },
+                        fill: { fgColor: { rgb: "2F5597" } },
+                        alignment: { horizontal: "center", vertical: "center" },
+                        border: borderStyle
+                    };
+                } else if (totalRows.includes(row)) {
+                    cell.s = {
+                        font: { bold: true },
+                        fill: { fgColor: { rgb: "F2F2F2" } },
+                        border: borderStyle
+                    };
+                } else if (dataRows.includes(row)) {
+                    cell.s.border = borderStyle;
+                    if (cellRef.startsWith('A') || cellRef.startsWith('E')) {
+                        cell.s.alignment = { horizontal: "center" };
+                    } else if (cellRef.startsWith('F') || cellRef.startsWith('G')) {
+                        cell.s.alignment = { horizontal: "right" };
+                        cell.s.numFmt = cellRef.startsWith('G') ? "#,##0.00" : "#,##0";
+                    }
+                }
             });
 
             ws['!cols'] = [
-                { wch: 8 }, { wch: 50 }, { wch: 15 }, { wch: 15 }, 
-                { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 12 }
+                { wch: 8 },  { wch: 50 }, { wch: 15 }, { wch: 18 }, { wch: 10 },
+                { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 15 }
             ];
 
             XLSX.utils.book_append_sheet(wb, ws, "Смета");
-            XLSX.writeFile(wb, "ПРОЕКТ_СМЕТА_АВТОМАТИКА.xlsx");
+            XLSX.writeFile(wb, "ПРОЕКТ_3230_РАСЧЕТ.xlsx");
         }
     </script>
 </body>
