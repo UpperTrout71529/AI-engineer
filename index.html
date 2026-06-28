@@ -36,7 +36,7 @@
 
     <script>
         // НАСТРОЙКА КЛЮЧЕЙ И URL (Замените URL на ваш эндпоинт из Pipedream)
-        const BACKEND_URL = 'https://ЗАМЕНИТЕ_НА_ВАШ_URL_ИЗ_PIPEDREAM.m.pipedream.net';
+        const BACKEND_URL = 'https://eojnvtpwshhdhwc.m.pipedream.net';
         const SCRAPINGANT_API_KEY = '24300b4e42584e17bca6b87edd528c5b';
 
         const pdfInput = document.getElementById('pdfInput');
@@ -202,7 +202,7 @@
             const titleRows = [], headerRows = [], totalRows = [], dataRows = [], formulaRanges = [];
 
             // Главный заголовок документа (с заполнением ячеек для корректной заливки всего диапазона)
-            sheetData.push(["АВТОМАТИЗИРОВАННЫЙ РАСЧЕТ СМЕТЫ МАТЕРИАЛОВ (Spring Renaissance)", "", "", "", "", "", "", "", ""]);
+            sheetData.push(["АВТОМАТИЗИРОВАННЫЙ РАСЧЕТ СМЕТЫ МАТЕРИАЛОВ", "", "", "", "", "", "", "", ""]);
             titleRows.push(currentRowIndex);
             sheetData.push(["", "", "", "", "", "", "", "", ""]); 
             currentRowIndex += 2;
