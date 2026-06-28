@@ -35,325 +35,298 @@
     </div>
 
     <script>
-        // Добавлен query-параметр pipedream_upload_body=1 для передачи тяжелых PDF
-        const BACKEND_URL = 'https://eojnvtpwshhdhwc.m.pipedream.net?pipedream_upload_body=1';
-        const SCRAPINGANT_API_KEY = '24300b4e42584e17bca6b87edd528c5b';
+    // Основной URL бэкенда (сохраняем параметр для загрузки тяжелых файлов)
+const BACKEND_URL = 'https://eojnvtpwshhdhwc.m.pipedream.net?pipedream_upload_body=1';
 
-        const pdfInput = document.getElementById('pdfInput');
-        const fileNameDisplay = document.getElementById('fileName');
-        const uploadForm = document.getElementById('uploadForm');
-        const submitBtn = document.getElementById('submitBtn');
-        const statusDiv = document.getElementById('status');
-        const statusText = document.getElementById('statusText');
-        const spinner = document.getElementById('spinner');
-        const dropZone = document.getElementById('dropZone');
+const pdfInput = document.getElementById('pdfInput');
+const fileNameDisplay = document.getElementById('fileName');
+const uploadForm = document.getElementById('uploadForm');
+const submitBtn = document.getElementById('submitBtn');
+const statusDiv = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+const spinner = document.getElementById('spinner');
+const dropZone = document.getElementById('dropZone');
 
-        pdfInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                fileNameDisplay.textContent = e.target.files[0].name;
-                dropZone.classList.add('bg-blue-50/50', 'border-blue-300');
-            }
+pdfInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        fileNameDisplay.textContent = e.target.files[0].name;
+        dropZone.classList.add('bg-blue-50/50', 'border-blue-300');
+    }
+});
+
+const toBase64 = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = error => reject(error);
+});
+
+// ГЛАВНЫЙ СЛУШАТЕЛЬ СОБЫТИЯ ОТПРАВКИ
+uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = pdfInput.files[0];
+    
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+        alert("Файл слишком большой! Максимальный размер — 20 МБ.");
+        return;
+    }
+
+    submitBtn.disabled = true;
+    statusDiv.classList.remove('hidden');
+    statusText.classList.remove('text-red-500');
+    spinner.classList.remove('hidden');
+
+    try {
+        statusText.innerHTML = 'Шаг 1: Загрузка PDF на сервер...<br><span class="text-gray-400 text-xs">Это может занять несколько секунд для тяжелых спецификаций</span>';
+        const base64File = await toBase64(file);
+
+        // Посылаем POST-запрос для инициализации задачи
+        const response = await fetch(BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ fileData: base64File })
         });
 
-        const toBase64 = file => new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = error => reject(error);
-        });
-
-        uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const file = pdfInput.files[0];
-            
-            if (!file) return;
-
-            if (file.size > 20 * 1024 * 1024) {
-                alert("Файл слишком большой! Максимальный размер — 20 МБ.");
-                return;
-            }
-
-            submitBtn.disabled = true;
-            statusDiv.classList.remove('hidden');
-            statusText.classList.remove('text-red-500');
-            spinner.classList.remove('hidden');
-
-            try {
-                // ШАГ 1: Извлечение структуры спецификации из PDF
-                statusText.innerHTML = 'Шаг 1 из 2: Отправка PDF и анализ ИИ...<br><span class="text-gray-400 text-xs">Тяжелые файлы могут обрабатываться до 60-90 секунд</span>';
-                const base64File = await toBase64(file);
-
-                const response = await fetch(BACKEND_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ fileData: base64File })
-                });
-
-                const responseText = await response.text();
-                
-                let items;
-                try {
-                    items = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error("Сырой ответ сервера:", responseText);
-                    throw new Error("Сервер вернул некорректный ответ. Посмотрите вкладку Logs/Executions в вашем воркфлоу Pipedream.");
-                }
-
-                if (items.error) {
-                    const errorMessage = items.error.message || JSON.stringify(items.error);
-                    throw new Error(errorMessage);
-                }
-
-                if (!Array.isArray(items)) {
-                    throw new Error("ИИ вернул данные в неверном формате массива.");
-                }
-
-                // ШАГ 2: Поочередный скрапинг цен из ETM через прокси ScrapingAnt
-                statusText.innerHTML = `Найдено позиций: ${items.length}. Начинаем онлайн-парсинг цен...`;
-                
-                const enrichedData = [];
-                for (let i = 0; i < items.length; i++) {
-                    const item = items[i];
-                    statusText.innerHTML = `<span class="text-blue-600 font-bold">Шаг 2 из 2: Онлайн-парсинг цен ETM</span><br><span class="text-slate-700">Обработка: ${item.name || 'Без названия'}</span><br><span class="text-gray-400 text-xs">Товар ${i + 1} из ${items.length}</span>`;
-                    
-                    const searchResult = await fetchPriceFromETMClient(item, SCRAPINGANT_API_KEY);
-                    item.price = searchResult.price;
-                    item.url = searchResult.url;
-                    if (searchResult.realArticle) item.article = searchResult.realArticle;
-                    
-                    enrichedData.push(item);
-                }
-
-                statusText.textContent = 'Формирование премиального Excel-документа...';
-                generateEstimateExcel(enrichedData);
-                statusText.innerHTML = '<span class="text-green-600 font-medium">Успешно! Файл сметы сгенерирован и скачан.</span>';
-                spinner.classList.add('hidden');
-
-            } catch (error) {
-                console.error(error);
-                statusText.innerHTML = `<b>Ошибка обработки:</b><br>${error.message}`;
-                statusText.classList.add('text-red-500');
-                spinner.classList.add('hidden');
-            } finally {
-                submitBtn.disabled = false;
-            }
-        });
-
-        // Функция отправки запроса в ScrapingAnt напрямую из браузера
-        async function fetchPriceFromETMClient(item, apiKey) {
-            let queryParts = [];
-            if (item.brand && item.brand !== "null" && item.brand !== "—") queryParts.push(item.brand);
-            if (item.name) queryParts.push(item.name);
-            if (item.article && item.article !== "null" && item.article !== "—") queryParts.push(item.article);
-            let searchQuery = queryParts.join(" ");
-            
-            let targetUrl = "https://www.etm.ru/catalog?search=" + encodeURIComponent(searchQuery);
-            let antUrl = "https://api.scrapingant.com/v2/general?url=" + encodeURIComponent(targetUrl) + "&ant-api-key=" + apiKey + "&browser=true";
-            
-            let result = { price: 0, url: targetUrl, realArticle: null };
-            
-            try {
-                let res = await fetch(antUrl);
-                if (res.ok) {
-                    let html = await res.text();
-                    let priceMatch = html.match(/"price":\s*([\d\s.,]+)/) || html.match(/data-price="([\d\s.,]+)"/) || html.match(/class="[^"]*price[^"]*"[^>]*>([\d\s.,]+)/);
-                    if (priceMatch) {
-                        let cleanedPrice = priceMatch[1].replace(/[\s\u00A0]/g, '').replace(',', '.');
-                        let parsedPrice = parseFloat(cleanedPrice);
-                        if (!isNaN(parsedPrice)) result.price = parsedPrice;
-                    }
-                    
-                    let linkMatch = html.match(/href="(\/cat\/product\/[^"]+)"/) || html.match(/href="(\/catalog\/products\/[^"]+)"/);
-                    if (linkMatch) result.url = "https://www.etm.ru" + linkMatch[1];
-                    
-                    let artMatch = html.match(/"code":\s*"([^"]+)"/) || html.match(/Артикул:\s*([\w-]+)/);
-                    if (artMatch) result.realArticle = artMatch[1];
-                }
-            } catch (e) {
-                console.warn("Не удалось спарсить данные с ScrapingAnt для: " + item.name, e);
-            }
-            
-            if (!result.price || result.price === 0) {
-                const textLower = (item.name || "").toLowerCase();
-                result.price = textLower.includes("кабель") || textLower.includes("провод") ? 185 : 430; 
-            }
-            return result;
+        if (!response.ok) {
+            throw new Error(`Не удалось запустить обработку. Статус сервера: ${response.status}`);
         }
 
-        // Генерация стилизованного Excel (xlsx-js-style)
-        function generateEstimateExcel(enrichedData) {
-            const wb = XLSX.utils.book_new();
-            const categories = {};
+        const initData = await response.json();
+        const jobId = initData.jobId;
+
+        if (!jobId) {
+            throw new Error("Сервер не вернул Идентификатор задачи (jobId).");
+        }
+
+        // Начинаем опрос статуса задачи (Polling)
+        statusText.innerHTML = 'Задача успешно поставлена в очередь. Ожидание запуска...';
+        const enrichedData = await pollJobStatus(jobId);
+
+        // Если вышли из пуллинга без ошибок, значит данные готовы
+        statusText.textContent = 'Формирование премиального Excel-документа...';
+        generateEstimateExcel(enrichedData);
+        
+        statusText.innerHTML = '<span class="text-green-600 font-medium">Успешно! Файл сметы сгенерирован и скачан.</span>';
+        spinner.classList.add('hidden');
+
+    } catch (error) {
+        console.error(error);
+        statusText.innerHTML = `<b>Ошибка обработки:</b><br>${error.message}`;
+        statusText.classList.add('text-red-500');
+        spinner.classList.add('hidden');
+    } finally {
+        submitBtn.disabled = false;
+    }
+});
+
+// ФУНКЦИЯ ОПРОСА СТАТУСА (POLLING)
+async function pollJobStatus(jobId) {
+    // Формируем URL для GET-запроса, добавляя параметр jobId
+    const pollUrl = `${BACKEND_URL}&jobId=${jobId}`;
+    const delay = 4000; // Интервал опроса — 4 секунды
+
+    while (true) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        try {
+            const res = await fetch(pollUrl, { method: 'GET' });
+            if (!res.ok) continue; // При сетевых микро-сбоях продолжаем пробовать
+
+            const jobData = await res.json();
+
+            if (jobData.status === 'completed') {
+                return jobData.data; // Возвращаем обогащенный массив позиций
+            } 
             
-            enrichedData.forEach(item => {
-                const cat = item.category || "Прочее";
-                if (!categories[cat]) categories[cat] = [];
-                categories[cat].push(item);
-            });
-
-            const sheetData = [];
-            const headers = ["Поз.", "Наименование материала / оборудования", "Бренд", "Артикул", "Ед. изм.", "Кол-во", "Цена (руб.)", "Сумма (руб.)", "Ссылка на ETM"];
+            if (jobData.status === 'failed') {
+                throw new Error(jobData.error || "Ошибка во время фонового выполнения воркфлоу.");
+            } 
             
-            let currentRowIndex = 0;
-            const titleRows = [], headerRows = [], totalRows = [], dataRows = [], formulaRanges = [];
-
-            sheetData.push(["АВТОМАТИЗИРОВАННЫЙ РАСЧЕТ СМЕТЫ МАТЕРИАЛОВ", "", "", "", "", "", "", "", ""]);
-            titleRows.push(currentRowIndex);
-            sheetData.push(["", "", "", "", "", "", "", "", ""]); 
-            currentRowIndex += 2;
-
-            for (const [categoryName, items] of Object.entries(categories)) {
-                sheetData.push([categoryName.toUpperCase(), "", "", "", "", "", "", "", ""]);
-                titleRows.push(currentRowIndex);
-                currentRowIndex++;
-                
-                sheetData.push(headers);
-                headerRows.push(currentRowIndex);
-                currentRowIndex++;
-                
-                const startRowXls = currentRowIndex + 1;
-                items.forEach((item, index) => {
-                    sheetData.push([
-                        index + 1, 
-                        item.name || "-", 
-                        item.brand || "—", 
-                        item.article || "—", 
-                        item.unit || "шт.", 
-                        Number(item.quantity || 0), 
-                        Number(item.price || 0), 
-                        0, 
-                        item.url || ""
-                    ]);
-                    dataRows.push(currentRowIndex);
-                    currentRowIndex++;
-                });
-                const endRowXls = currentRowIndex;
-                
-                sheetData.push(["", "ИТОГО ПО КАТЕГОРИИ:", "", "", "", "", "", 0, ""]);
-                totalRows.push(currentRowIndex);
-                formulaRanges.push({ start: startRowXls, end: endRowXls, totalRow: currentRowIndex + 1 });
-                
-                sheetData.push(["", "", "", "", "", "", "", "", ""]); 
-                currentRowIndex++;
+            if (jobData.status === 'processing') {
+                // Выводим пользователю актуальный текстовый статус из бэкенда
+                statusText.innerHTML = `<span class="text-blue-600 font-bold">Выполняется на сервере</span><br><span class="text-slate-600 text-xs">${jobData.progress || 'Подождите...'}</span>`;
             }
 
-            const ws = XLSX.utils.aoa_to_sheet(sheetData);
+        } catch (err) {
+            // Если это наша явная ошибка "failed", пробрасываем её наверх для вывода в UI
+            if (err.message.includes("фонового выполнения")) throw err;
+            console.warn("Ошибка соединения при опросе статуса:", err);
+        }
+    }
+}
 
-            const borderStyle = {
-                top: { style: "thin", color: { rgb: "E2E8F0" } },
-                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
-                left: { style: "thin", color: { rgb: "E2E8F0" } },
-                right: { style: "thin", color: { rgb: "E2E8F0" } }
+// Генерация стилизованного Excel (xlsx-js-style) — Оставляем БЕЗ ИЗМЕНЕНИЙ
+function generateEstimateExcel(enrichedData) {
+    const wb = XLSX.utils.book_new();
+    const categories = {};
+    
+    enrichedData.forEach(item => {
+        const cat = item.category || "Прочее";
+        if (!categories[cat]) categories[cat] = [];
+        categories[cat].push(item);
+    });
+
+    const sheetData = [];
+    const headers = ["Поз.", "Наименование материала / оборудования", "Бренд", "Артикул", "Ед. изм.", "Кол-во", "Цена (руб.)", "Сумма (руб.)", "Ссылка на ETM"];
+    
+    let currentRowIndex = 0;
+    const titleRows = [], headerRows = [], totalRows = [], dataRows = [], formulaRanges = [];
+
+    sheetData.push(["АВТОМАТИЗИРОВАННЫЙ РАСЧЕТ СМЕТЫ МАТЕРИАЛОВ", "", "", "", "", "", "", "", ""]);
+    titleRows.push(currentRowIndex);
+    sheetData.push(["", "", "", "", "", "", "", "", ""]); 
+    currentRowIndex += 2;
+
+    for (const [categoryName, items] of Object.entries(categories)) {
+        sheetData.push([categoryName.toUpperCase(), "", "", "", "", "", "", "", ""]);
+        titleRows.push(currentRowIndex);
+        currentRowIndex++;
+        
+        sheetData.push(headers);
+        headerRows.push(currentRowIndex);
+        currentRowIndex++;
+        
+        const startRowXls = currentRowIndex + 1;
+        items.forEach((item, index) => {
+            sheetData.push([
+                index + 1, 
+                item.name || "-", 
+                item.brand || "—", 
+                item.article || "—", 
+                item.unit || "шт.", 
+                Number(item.quantity || 0), 
+                Number(item.price || 0), 
+                0, 
+                item.url || ""
+            ]);
+            dataRows.push(currentRowIndex);
+            currentRowIndex++;
+        });
+        const endRowXls = currentRowIndex;
+        
+        sheetData.push(["", "ИТОГО ПО КАТЕГОРИИ:", "", "", "", "", "", 0, ""]);
+        totalRows.push(currentRowIndex);
+        formulaRanges.push({ start: startRowXls, end: endRowXls, totalRow: currentRowIndex + 1 });
+        
+        sheetData.push(["", "", "", "", "", "", "", "", ""]); 
+        currentRowIndex++;
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+    const borderStyle = {
+        top: { style: "thin", color: { rgb: "E2E8F0" } },
+        bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+        left: { style: "thin", color: { rgb: "E2E8F0" } },
+        right: { style: "thin", color: { rgb: "E2E8F0" } }
+    };
+
+    Object.keys(ws).forEach(cellRef => {
+        if (cellRef[0] === '!') return;
+        const cell = ws[cellRef];
+        const row = parseInt(cellRef.replace(/[^0-9]/g, '')) - 1;
+        const col = cellRef.replace(/[0-9]/g, '');
+        
+        if (!cell.s) cell.s = {};
+        if (row > 0) cell.s.border = borderStyle;
+        
+        if (titleRows.includes(row)) {
+            if (row === 0) {
+                cell.s = {
+                    font: { bold: true, size: 12, color: { rgb: "FFFFFF" }, name: "Arial" },
+                    fill: { fgColor: { rgb: "1E293B" } },
+                    alignment: { horizontal: "center", vertical: "center" }
+                };
+            } else {
+                cell.s = {
+                    font: { bold: true, size: 10, color: { rgb: "0F172A" }, name: "Arial" },
+                    fill: { fgColor: { rgb: "F1F5F9" } },
+                    alignment: { horizontal: "left", vertical: "center" },
+                    border: borderStyle
+                };
+            }
+        } else if (headerRows.includes(row)) {
+            cell.s = {
+                font: { bold: true, size: 9, color: { rgb: "FFFFFF" }, name: "Arial" },
+                fill: { fgColor: { rgb: "475569" } },
+                alignment: { horizontal: "center", vertical: "center" },
+                border: borderStyle
+            };
+        } else if (totalRows.includes(row)) {
+            cell.s = {
+                font: { bold: true, size: 9, color: { rgb: "0F172A" }, name: "Arial" },
+                fill: { fgColor: { rgb: "F8FAFC" } },
+                border: borderStyle
+            };
+        } else if (dataRows.includes(row)) {
+            cell.s.font = { size: 9, name: "Arial", color: { rgb: "334155" } };
+            if (col === 'A' || col === 'E') {
+                cell.s.alignment = { horizontal: "center", vertical: "center" };
+            } else if (col === 'F' || col === 'G' || col === 'H') {
+                cell.s.alignment = { horizontal: "right", vertical: "center" };
+            } else {
+                cell.s.alignment = { horizontal: "left", vertical: "center" };
+            }
+        }
+    });
+
+    formulaRanges.forEach(range => {
+        for (let r = range.start; r <= range.end; r++) {
+            ws[`H${r}`] = { 
+                t: 'n', 
+                f: `F${r}*G${r}`, 
+                s: { 
+                    font: { size: 9, name: "Arial", color: { rgb: "334155" } },
+                    numFmt: "#,##0.00", 
+                    alignment: { horizontal: "right", vertical: "center" },
+                    border: borderStyle 
+                } 
             };
 
-            Object.keys(ws).forEach(cellRef => {
-                if (cellRef[0] === '!') return;
-                const cell = ws[cellRef];
-                const row = parseInt(cellRef.replace(/[^0-9]/g, '')) - 1;
-                const col = cellRef.replace(/[0-9]/g, '');
-                
-                if (!cell.s) cell.s = {};
-                
-                if (row > 0) cell.s.border = borderStyle;
-                
-                if (titleRows.includes(row)) {
-                    if (row === 0) {
-                        cell.s = {
-                            font: { bold: true, size: 12, color: { rgb: "FFFFFF" }, name: "Arial" },
-                            fill: { fgColor: { rgb: "1E293B" } },
-                            alignment: { horizontal: "center", vertical: "center" }
-                        };
-                    } else {
-                        cell.s = {
-                            font: { bold: true, size: 10, color: { rgb: "0F172A" }, name: "Arial" },
-                            fill: { fgColor: { rgb: "F1F5F9" } },
-                            alignment: { horizontal: "left", vertical: "center" },
-                            border: borderStyle
-                        };
-                    }
-                } else if (headerRows.includes(row)) {
-                    cell.s = {
-                        font: { bold: true, size: 9, color: { rgb: "FFFFFF" }, name: "Arial" },
-                        fill: { fgColor: { rgb: "475569" } },
-                        alignment: { horizontal: "center", vertical: "center" },
-                        border: borderStyle
-                    };
-                } else if (totalRows.includes(row)) {
-                    cell.s = {
-                        font: { bold: true, size: 9, color: { rgb: "0F172A" }, name: "Arial" },
-                        fill: { fgColor: { rgb: "F8FAFC" } },
-                        border: borderStyle
-                    };
-                } else if (dataRows.includes(row)) {
-                    cell.s.font = { size: 9, name: "Arial", color: { rgb: "334155" } };
-                    
-                    if (col === 'A' || col === 'E') {
-                        cell.s.alignment = { horizontal: "center", vertical: "center" };
-                    } else if (col === 'F' || col === 'G' || col === 'H') {
-                        cell.s.alignment = { horizontal: "right", vertical: "center" };
-                    } else {
-                        cell.s.alignment = { horizontal: "left", vertical: "center" };
-                    }
-                }
-            });
-
-            formulaRanges.forEach(range => {
-                for (let r = range.start; r <= range.end; r++) {
-                    ws[`H${r}`] = { 
-                        t: 'n', 
-                        f: `F${r}*G${r}`, 
-                        s: { 
-                            font: { size: 9, name: "Arial", color: { rgb: "334155" } },
-                            numFmt: "#,##0.00", 
-                            alignment: { horizontal: "right", vertical: "center" },
-                            border: borderStyle 
-                        } 
-                    };
-
-                    if (ws[`I${r}`] && ws[`I${r}`].v && ws[`I${r}`].v.toString().startsWith('http')) {
-                        ws[`I${r}`] = { 
-                            t: 's', 
-                            v: "Купить на ETM", 
-                            l: { target: ws[`I${r}`].v }, 
-                            s: { 
-                                font: { color: { rgb: "2563EB" }, underline: true, size: 9, name: "Arial" }, 
-                                alignment: { horizontal: "center", vertical: "center" }, 
-                                border: borderStyle 
-                            } 
-                        };
-                    }
-                }
-                
-                ws[`H${range.totalRow}`] = { 
-                    t: 'n', 
-                    f: `SUM(H${range.start}:H${range.end})`, 
+            if (ws[`I${r}`] && ws[`I${r}`].v && ws[`I${r}`].v.toString().startsWith('http')) {
+                ws[`I${r}`] = { 
+                    t: 's', 
+                    v: "Купить на ETM", 
+                    l: { target: ws[`I${r}`].v }, 
                     s: { 
-                        font: { bold: true, size: 9, color: { rgb: "0F172A" }, name: "Arial" }, 
-                        fill: { fgColor: { rgb: "F1F5F9" } }, 
-                        numFmt: "#,##0.00", 
-                        alignment: { horizontal: "right", vertical: "center" },
+                        font: { color: { rgb: "2563EB" }, underline: true, size: 9, name: "Arial" }, 
+                        alignment: { horizontal: "center", vertical: "center" }, 
                         border: borderStyle 
                     } 
                 };
-            });
-
-            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }];
-
-            ws['!cols'] = [
-                { wch: 6 },  
-                { wch: 48 }, 
-                { wch: 14 }, 
-                { wch: 16 }, 
-                { wch: 8 },  
-                { wch: 9 },  
-                { wch: 13 }, 
-                { wch: 15 }, 
-                { wch: 16 }  
-            ];
-
-            XLSX.utils.book_append_sheet(wb, ws, "Смета проекта");
-            XLSX.writeFile(wb, "СМЕТА_ПРОЕКТА_ЭТМ.xlsx");
+            }
         }
+        
+        ws[`H${range.totalRow}`] = { 
+            t: 'n', 
+            f: `SUM(H${range.start}:H${range.end})`, 
+            s: { 
+                font: { bold: true, size: 9, color: { rgb: "0F172A" }, name: "Arial" }, 
+                fill: { fgColor: { rgb: "F1F5F9" } }, 
+                numFmt: "#,##0.00", 
+                alignment: { horizontal: "right", vertical: "center" },
+                border: borderStyle 
+            } 
+        };
+    });
+
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }];
+    ws['!cols'] = [
+        { wch: 6 },  
+        { wch: 48 }, 
+        { wch: 14 }, 
+        { wch: 16 }, 
+        { wch: 8 },  
+        { wch: 9 },  
+        { wch: 13 }, 
+        { wch: 15 }, 
+        { wch: 16 }  
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Смета проекта");
+    XLSX.writeFile(wb, "СМЕТА_ПРОЕКТА_ЭТМ.xlsx");
+}
     </script>
 </body>
 </html>
