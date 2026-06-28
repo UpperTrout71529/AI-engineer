@@ -11,7 +11,7 @@
 
     <div class="bg-white p-8 sm:p-10 rounded-2xl shadow-sm border border-gray-100 max-w-lg w-full">
         <h1 class="text-2xl font-medium mb-2 text-slate-800">Генерация сметы</h1>
-        <p class="text-gray-500 text-sm mb-8">Загрузите PDF-проект. Система извлечет спецификацию через ИИ, а затем поочередно найдет актуальные цены на ETM через ScrapingAnt.</p>
+        <p class="text-gray-500 text-sm mb-8">Загрузите PDF-проект. Система извлечет спецификацию через ИИ, а затем найдет актуальные цены на ETM через ScrapingAnt.</p>
 
         <form id="uploadForm" class="space-y-6">
             <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors relative" id="dropZone">
@@ -78,7 +78,7 @@ uploadForm.addEventListener('submit', async (e) => {
     spinner.classList.remove('hidden');
 
     try {
-        statusText.innerHTML = 'Шаг 1: Загрузка PDF на сервер...<br><span class="text-gray-400 text-xs">Это может занять несколько секунд для тяжелых спецификаций</span>';
+        statusText.innerHTML = 'Шаг 1: Загрузка PDF на server...<br><span class="text-gray-400 text-xs">Это может занять несколько секунд для тяжелых спецификаций</span>';
         const base64File = await toBase64(file);
 
         // Посылаем POST-запрос для инициализации задачи
@@ -122,7 +122,6 @@ uploadForm.addEventListener('submit', async (e) => {
 
 // ФУНКЦИЯ ОПРОСА СТАТУСА (POLLING)
 async function pollJobStatus(jobId) {
-    // Формируем URL для GET-запроса, добавляя параметр jobId
     const pollUrl = `${BACKEND_URL}&jobId=${jobId}`;
     const delay = 4000; // Интервал опроса — 4 секунды
 
@@ -131,12 +130,12 @@ async function pollJobStatus(jobId) {
 
         try {
             const res = await fetch(pollUrl, { method: 'GET' });
-            if (!res.ok) continue; // При сетевых микро-сбоях продолжаем пробовать
+            if (!res.ok) continue;
 
             const jobData = await res.json();
 
             if (jobData.status === 'completed') {
-                return jobData.data; // Возвращаем обогащенный массив позиций
+                return jobData.data;
             } 
             
             if (jobData.status === 'failed') {
@@ -144,19 +143,17 @@ async function pollJobStatus(jobId) {
             } 
             
             if (jobData.status === 'processing') {
-                // Выводим пользователю актуальный текстовый статус из бэкенда
                 statusText.innerHTML = `<span class="text-blue-600 font-bold">Выполняется на сервере</span><br><span class="text-slate-600 text-xs">${jobData.progress || 'Подождите...'}</span>`;
             }
 
         } catch (err) {
-            // Если это наша явная ошибка "failed", пробрасываем её наверх для вывода в UI
             if (err.message.includes("фонового выполнения")) throw err;
             console.warn("Ошибка соединения при опросе статуса:", err);
         }
     }
 }
 
-// Генерация стилизованного Excel (xlsx-js-style) — Оставляем БЕЗ ИЗМЕНЕНИЙ
+// Генерация стилизованного Excel (xlsx-js-style)
 function generateEstimateExcel(enrichedData) {
     const wb = XLSX.utils.book_new();
     const categories = {};
@@ -189,14 +186,18 @@ function generateEstimateExcel(enrichedData) {
         
         const startRowXls = currentRowIndex + 1;
         items.forEach((item, index) => {
+            // Принудительное очищение строк от букв/мусора и конвертация в чистые валидные числа
+            const safeQuantity = parseFloat(String(item.quantity || 0).replace(/,/g, '.').replace(/[^\d.]/g, '')) || 0;
+            const safePrice = parseFloat(String(item.price || 0).replace(/,/g, '.').replace(/[^\d.]/g, '')) || 0;
+
             sheetData.push([
                 index + 1, 
                 item.name || "-", 
                 item.brand || "—", 
                 item.article || "—", 
                 item.unit || "шт.", 
-                Number(item.quantity || 0), 
-                Number(item.price || 0), 
+                safeQuantity, 
+                safePrice, 
                 0, 
                 item.url || ""
             ]);
@@ -288,7 +289,7 @@ function generateEstimateExcel(enrichedData) {
                 ws[`I${r}`] = { 
                     t: 's', 
                     v: "Купить на ETM", 
-                    l: { target: ws[`I${r}`].v }, 
+                    l: { Target: ws[`I${r}`].v.toString() }, // Изменено на 'Target' для полной интерактивности ссылки
                     s: { 
                         font: { color: { rgb: "2563EB" }, underline: true, size: 9, name: "Arial" }, 
                         alignment: { horizontal: "center", vertical: "center" }, 
