@@ -10,8 +10,17 @@ st.set_page_config(page_title="ИИ Сметчик материалов", page_i
 st.title("📊 Автоматизированный ИИ-расчет смет (Облачная версия)")
 st.write("Загрузите проектный PDF-файл. Система извлечет спецификацию через ИИ и сформирует Excel.")
 
-# Поле ввода ключа
-gemini_api_key = st.text_input("🔑 Введите ваш Gemini API Key:", type="password")
+# Выбор режима работы шлюза
+api_provider = st.radio(
+    "🌐 Выберите способ подключения к ИИ:",
+    ["ProxyAPI (Для РФ, без VPN, стабильно)", "Google AI Studio Напрямую (Нужен VPN/Прокси)"]
+)
+
+# Поле ввода ключа в зависимости от выбора
+if api_provider.startswith("ProxyAPI"):
+    gemini_api_key = st.text_input("🔑 Введите ваш ProxyAPI Ключ (начинается с pa-...):", type="password")
+else:
+    gemini_api_key = st.text_input("🔑 Введите ваш Gemini API Key из AI Studio:", type="password")
 
 # Интерфейс загрузки файла
 uploaded_file = st.file_uploader("Выберите PDF-файл спецификации", type=["pdf"])
@@ -31,11 +40,25 @@ if uploaded_file is not None:
             bytes_data = uploaded_file.getvalue()
             pdf_base64 = base64.b64encode(bytes_data).decode("utf-8")
             
-         # --- ШАГ 2: Запрос к Gemini через российский шлюз ProxyAPI ---
+            # --- ШАГ 2: Запрос к Gemini ---
             status.update(label="Шаг 2: Извлечение спецификации искусственным интеллектом...", state="running")
             
-            # Направляем запрос на сервер ProxyAPI. Они зеркалируют эндпоинты Google
-            gemini_url = "https://api.proxyapi.ru/google/v1beta/models/gemini-flash-latest:generateContent"
+            # Используем актуальную стабильную модель
+            model_name = "gemini-2.5-flash"
+            
+            # Динамически настраиваем эндпоинт и заголовки под выбранного провайдера
+            if api_provider.startswith("ProxyAPI"):
+                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/{model_name}:generateContent"
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {gemini_api_key}"
+                }
+            else:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-goog-api-key": gemini_api_key
+                }
             
             prompt = """Ты — эксперт по анализу проектных спецификаций. 
 Преобразуй переданный PDF-документ (в формате base64) в строгий JSON-массив объектов.
@@ -58,36 +81,29 @@ if uploaded_file is not None:
                 }]
             }
             
-            # У ProxyAPI авторизация идет через стандартный заголовок Authorization: Bearer
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {gemini_api_key}"
-            }
-            
-            # Передаем API-ключ в заголовках, как в рабочем CURL
-            headers = {
-                "Content-Type": "application/json",
-                "X-goog-api-key": gemini_api_key
-            }
-            
             try:
                 response = requests.post(gemini_url, json=payload, headers=headers, timeout=120)
                 res_json = response.json()
                 
+                # Проверка явных ошибок от API
                 if 'error' in res_json:
-                    status.update(label="Ошибка Google API", state="error")
-                    st.error(f"Сервер Google вернул ошибку: {res_json['error'].get('message', 'Неизвестная ошибка')}")
+                    status.update(label="Ошибка API", state="error")
+                    st.error(f"Сервер вернул ошибку: {res_json['error'].get('message', 'Неизвестная ошибка')}")
                     st.stop()
                 
+                # Чтение ответа ИИ
                 text_response = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
                 clean_json = text_response.replace("```json", "").replace("```", "").strip()
                 
                 parsed_items = json.loads(clean_json)
-                st.write(f"🤖 ИИ успешно распознан позиций: {len(parsed_items)}")
+                st.write(f"🤖 ИИ успешно распознал позиций: {len(parsed_items)}")
                 
             except Exception as e:
                 status.update(label="Ошибка на этапе ИИ", state="error")
-                st.error(f"Не удалось получить ответ от ИИ: {str(e)}")
+                st.error(f"Не удалось получить или разобрать ответ от ИИ: {str(e)}")
+                # Выводим ответ сервера, если он есть, для быстрой диагностики в UI
+                if 'res_json' in locals():
+                    st.json(res_json)
                 st.stop()
                 
             # --- ШАГ 3: Цены ---
