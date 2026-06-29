@@ -44,11 +44,11 @@ if uploaded_file is not None:
             status.update(label="Шаг 2: Анализ схем и извлечение спецификации ИИ...", state="running")
             
             # ИСПОЛЬЗУЕМ СТРОГОЕ, СТАБИЛЬНОЕ ИМЯ МОДЕЛИ
-            model_name = "gemini-1.5-flash"
+            model_name = "gemini-flash-latest"
             
             if api_provider.startswith("ProxyAPI"):
                 # Собираем URL динамически с подстановкой model_name
-                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/gemini-flash-latest:generateContent"
+                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/{model_name}:generateContent"
                 headers = {
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {gemini_api_key}"
