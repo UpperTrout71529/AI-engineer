@@ -48,7 +48,7 @@ if uploaded_file is not None:
             
             if api_provider.startswith("ProxyAPI"):
                 # Собираем URL динамически с подстановкой model_name
-                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/{model_name}:generateContent"
+                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/gemini-flash-latest:generateContent"
                 headers = {
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {gemini_api_key}"
