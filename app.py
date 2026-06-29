@@ -4,11 +4,13 @@ import json
 import base64
 import pandas as pd
 from io import BytesIO
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="ИИ Сметчик материалов", page_icon="📊", layout="centered")
 
-st.title("📊 Автоматизированный ИИ-расчет смет (Облачная версия)")
-st.write("Загрузите проектный PDF-файл. Система извлечет спецификацию через ИИ и сформирует Excel.")
+st.title("📊 Автоматизированный ИИ-расчет смет (Профессиональная версия)")
+st.write("Загрузите проектный PDF со схемами или спецификациями. Система извлечет данные через ИИ по жесткой схеме и сформирует премиальный Excel.")
 
 # Выбор режима работы шлюза
 api_provider = st.radio(
@@ -16,19 +18,17 @@ api_provider = st.radio(
     ["ProxyAPI (Для РФ, без VPN, стабильно)", "Google AI Studio Напрямую (Нужен VPN/Прокси)"]
 )
 
-# Поле ввода ключа в зависимости от выбора
 if api_provider.startswith("ProxyAPI"):
-    gemini_api_key = st.text_input("🔑 Введите ваш ProxyAPI Ключ (начинается с pa-...):", type="password")
+    gemini_api_key = st.text_input("🔑 Введите ваш ProxyAPI Ключ (pa-...):", type="password")
 else:
-    gemini_api_key = st.text_input("🔑 Введите ваш Gemini API Key из AI Studio:", type="password")
+    gemini_api_key = st.text_input("🔑 Введите ваш Gemini API Key:", type="password")
 
-# Интерфейс загрузки файла
-uploaded_file = st.file_uploader("Выберите PDF-файл спецификации", type=["pdf"])
+uploaded_file = st.file_uploader("Выберите PDF-файл проекта (чертежи или спецификации)", type=["pdf"])
 
 if uploaded_file is not None:
-    st.success(f"Файл '{uploaded_file.name}' успешно загружен в систему!")
+    st.success(f"Файл '{uploaded_file.name}' загружен!")
     
-    if st.button("🚀 Запустить обработку документа"):
+    if st.button("🚀 Запустить профессиональный расчет"):
         if not gemini_api_key:
             st.error("Ошибка: Пожалуйста, введите ваш API-ключ.")
             st.stop()
@@ -36,19 +36,17 @@ if uploaded_file is not None:
         with st.status("Выполнение процессов...", expanded=True) as status:
             
             # --- ШАГ 1: Кодирование файла ---
-            status.update(label="Шаг 1: Кодирование файла для ИИ...", state="running")
+            status.update(label="Шаг 1: Оптимизация и кодирование чертежей...", state="running")
             bytes_data = uploaded_file.getvalue()
             pdf_base64 = base64.b64encode(bytes_data).decode("utf-8")
             
-            # --- ШАГ 2: Запрос к Gemini ---
-            status.update(label="Шаг 2: Извлечение спецификации искусственным интеллектом...", state="running")
+            # --- ШАГ 2: Запрос к Gemini со Structured Outputs ---
+            status.update(label="Шаг 2: Анализ схем и извлечение спецификации ИИ...", state="running")
             
-            # Используем актуальную стабильную модель
             model_name = "gemini-2.5-flash"
             
-            # Динамически настраиваем эндпоинт и заголовки под выбранного провайдера
             if api_provider.startswith("ProxyAPI"):
-                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/{model_name}:generateContent"
+                gemini_url = f"https://api.proxyapi.ru/google/v1beta/models/gemini-flash-latest:generateContent"
                 headers = {
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {gemini_api_key}"
@@ -60,88 +58,171 @@ if uploaded_file is not None:
                     "X-goog-api-key": gemini_api_key
                 }
             
-            prompt = """Ты — эксперт по анализу проектных спецификаций. 
-Преобразуй переданный PDF-документ (в формате base64) в строгий JSON-массив объектов.
-Каждый объект в массиве должен строго иметь следующие поля (если данных нет, ставь пустую строку):
-- category (строка, категория оборудования)
-- name (строка, полное наименование материала/оборудования)
-- brand (строка, бренд/производитель)
-- article (строка, артикул или код заказа)
-- unit (строка, единица измерения)
-- quantity (число или строка, количество)
+            prompt = "Ты — ведущий инженер-сметчик. Внимательно изучи переданный документ (спецификации или однолинейные схемы). Найди все материалы, кабели, щиты и оборудование. Сформируй строгий список объектов по указанной JSON-схеме. Пропускай текстовые описания проекта, собирай только номенклатуру для закупки."
 
-Ответь ТОЛЬКО чистым валидным JSON-массивом, без markdown разметки типа ```json. Никакого лишнего текста."""
-
+            # Внедряем технологию Structured Outputs (жесткая схема ответа для ИИ)
             payload = {
                 "contents": [{
                     "parts": [
                         {"text": prompt},
                         {"inlineData": {"mimeType": "application/pdf", "data": pdf_base64}}
                     ]
-                }]
+                }],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "responseSchema": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "category": {"type": "STRING", "description": "Категория, например: Автоматические выключатели, Кабель, Щиты"},
+                                "name": {"type": "STRING", "description": "Полное техническое наименование оборудования"},
+                                "brand": {"type": "STRING", "description": "Производитель/Бренд (EKF, IEK, Schneider Electric и т.д.), если нет ставяй пустую строку"},
+                                "article": {"type": "STRING", "description": "Заводской артикул, код заказа или шифр. Если нет - пустая строка"},
+                                "unit": {"type": "STRING", "description": "Единица измерения (шт, м, компл)"},
+                                "quantity": {"type": "STRING", "description": "Количество (числом или строкой)"}
+                            },
+                            "required": ["category", "name", "brand", "article", "unit", "quantity"]
+                        }
+                    }
+                }
             }
             
             try:
-                response = requests.post(gemini_url, json=payload, headers=headers, timeout=120)
+                response = requests.post(gemini_url, json=payload, headers=headers, timeout=180)
                 res_json = response.json()
                 
-                # Проверка явных ошибок от API
                 if 'error' in res_json:
-                    status.update(label="Ошибка API", state="error")
-                    st.error(f"Сервер вернул ошибку: {res_json['error'].get('message', 'Неизвестная ошибка')}")
+                    status.update(label="Ошибка ИИ-сервера", state="error")
+                    st.error(f"Детали ошибки: {res_json['error'].get('message', '')}")
                     st.stop()
                 
-                # Чтение ответа ИИ
                 text_response = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
-                clean_json = text_response.replace("```json", "").replace("```", "").strip()
-                
-                parsed_items = json.loads(clean_json)
-                st.write(f"🤖 ИИ успешно распознал позиций: {len(parsed_items)}")
+                parsed_items = json.loads(text_response)
+                st.write(f"📊 ИИ успешно нашел и структурировал позиций: {len(parsed_items)}")
                 
             except Exception as e:
-                status.update(label="Ошибка на этапе ИИ", state="error")
-                st.error(f"Не удалось получить или разобрать ответ от ИИ: {str(e)}")
-                # Выводим ответ сервера, если он есть, для быстрой диагностики в UI
+                status.update(label="Критическая ошибка разбора", state="error")
+                st.error(f"Не удалось обработать ответ. Возможно, Streamlit разорвал связь по таймауту. Ошибка: {str(e)}")
                 if 'res_json' in locals():
                     st.json(res_json)
                 st.stop()
                 
-            # --- ШАГ 3: Цены ---
-            status.update(label="Шаг 3: Мониторинг цен в каталоге...", state="running")
+            # --- ШАГ 3: Цены и Ссылки ---
+            status.update(label="Шаг 3: Подготовка поисковых запросов к ETM...", state="running")
             final_data = []
             for item in parsed_items:
-                price = 430 
+                price = 430.00  # Базовая заглушка цены (в будущем сюда встанет парсер/API)
                 try:
-                    qty = float(str(item.get('quantity', 0)).replace(',', '.'))
+                    qty_str = str(item.get('quantity', '1')).replace(',', '.').strip()
+                    qty = float(''.join(c for c in qty_str if c.isdigit() or c == '.'))
                 except:
-                    qty = 1
-                total = qty * price
+                    qty = 1.0
+                
+                article = item.get('article', '').strip()
+                brand = item.get('brand', '').strip()
+                search_query = article if article else item.get('name', '')
+                
+                # Пометка для сметчика, если ИИ не нашел точный артикул на схеме
+                verification_flag = "Точный поиск" if article else "Проверить вручную (нет артикула)"
                 
                 final_data.append({
                     "Категория": item.get('category', 'Разное'),
-                    "Наименование материала / оборудования": item.get('name', ''),
-                    "Бренд": item.get('brand', '—'),
-                    "Артикул": item.get('article', '—'),
+                    "Наименование материала / оборудования": item.get('name', '—'),
+                    "Бренд": brand if brand else "—",
+                    "Артикул": article if article else "—",
                     "Ед. изм.": item.get('unit', 'шт.'),
                     "Кол-во": qty,
                     "Цена (руб.)": price,
-                    "Сумма (руб.)": total,
-                    "Ссылка на ETM": f"[https://www.etm.ru/catalog?search=](https://www.etm.ru/catalog?search=){item.get('article', '')}"
+                    "Сумма (руб.)": None,  # Заполним формулой Excel на Шаге 4
+                    "Статус проверки": verification_flag,
+                    "Ссылка на ETM": f"https://www.etm.ru/catalog?search={search_query}"
                 })
                 
-            # --- ШАГ 4: Excel ---
-            status.update(label="Шаг 4: Формирование документа Excel...", state="running")
+            # --- ШАГ 4: Профессиональная сборка Excel через openpyxl ---
+            status.update(label="Шаг 4: Генерация брендированного отчета Excel...", state="running")
+            
             df = pd.DataFrame(final_data)
             output = BytesIO()
+            
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='Смета проекта')
-            processed_data = output.getvalue()
+                workbook = writer.book
+                worksheet = writer.sheets['Смета проекта']
+                
+                # Стилизация
+                header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+                header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+                data_font = Font(name="Arial", size=10)
+                flag_font_attention = Font(name="Arial", size=10, color="9C0006", italic=True)
+                total_font = Font(name="Arial", size=11, bold=True)
+                
+                thin_border = Border(
+                    left=Side(style='thin', color='D9D9D9'),
+                    right=Side(style='thin', color='D9D9D9'),
+                    top=Side(style='thin', color='D9D9D9'),
+                    bottom=Side(style='thin', color='D9D9D9')
+                )
+                
+                # Красим шапку
+                for col_num in range(1, len(df.columns) + 1):
+                    cell = worksheet.cell(row=1, column=col_num)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                
+                # Заполняем данными, прописываем формулы и форматы
+                for row_num in range(2, len(df) + 2):
+                    # Прописываем живую формулу умножения Excel: Кол-во (F) * Цена (G)
+                    worksheet.cell(row=row_num, column=8, value=f"=F{row_num}*G{row_num}")
+                    
+                    # Форматируем ячейки цены и суммы
+                    worksheet.cell(row=row_num, column=7).number_format = '#,##0.00'
+                    worksheet.cell(row=row_num, column=8).number_format = '#,##0.00'
+                    
+                    # Настраиваем ссылки
+                    etm_url = df.iloc[row_num-2]["Ссылка на ETM"]
+                    worksheet.cell(row=row_num, column=10).value = f'=HYPERLINK("{etm_url}", "Открыть в ETM")'
+                    worksheet.cell(row=row_num, column=10).font = Font(name="Arial", size=10, color="0563C1", underline="single")
+                    
+                    # Стилизуем строки данных
+                    for col_num in range(1, len(df.columns) + 1):
+                        cell = worksheet.cell(row=row_num, column=col_num)
+                        cell.border = thin_border
+                        if col_num != 10 and col_num != 9:
+                            cell.font = data_font
+                        
+                        # Если нет артикула, подсвечиваем статус проверки
+                        if col_num == 9 and "Проверить" in str(cell.value):
+                            cell.font = flag_font_attention
+                        elif col_num == 9:
+                            cell.font = data_font
+
+                # Добавляем строку ИТОГО
+                total_row = len(df) + 3
+                worksheet.cell(row=total_row, column=7, value="ИТОГО ПО СМЕТЕ:").font = total_font
+                worksheet.cell(row=total_row, column=8, value=f"=SUM(H2:H{total_row-1})").font = total_font
+                worksheet.cell(row=total_row, column=8).number_format = '#,##0.00'
+                
+                # Автоматический подбор ширины колонок
+                for col in worksheet.columns:
+                    max_len = 0
+                    col_letter = get_column_letter(col[0].column)
+                    for cell in col:
+                        if cell.value:
+                            # Убираем длину формулы из расчета ширины ссылки
+                            val_str = str(cell.value)
+                            if "HYPERLINK" in val_str:
+                                val_str = "Открыть в ETM"
+                            max_len = max(max_len, len(val_str))
+                    worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
             
-            status.update(label="Все готово! Расчет завершен успешно.", state="complete")
+            processed_data = output.getvalue()
+            status.update(label="Расчет завершен! Премиальный Excel сформирован.", state="complete")
             
         st.download_button(
             label="📥 Скачать готовую смету Excel",
             data=processed_data,
-            file_name="СМЕТА_ПРОЕКТА_ИИ.xlsx",
+            file_name="КОРПОРАТИВНАЯ_СМЕТА_ИИ.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
