@@ -34,7 +34,7 @@ if uploaded_file is not None:
             # --- ШАГ 2: Запрос к Gemini (Исправленный URL и Headers) ---
             status.update(label="Шаг 2: Извлечение спецификации искусственным интеллектом...", state="running")
             
-            gemini_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+            gemini_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
             
             prompt = """Ты — эксперт по анализу проектных спецификаций. 
 Преобразуй переданный PDF-документ (в формате base64) в строгий JSON-массив объектов.
