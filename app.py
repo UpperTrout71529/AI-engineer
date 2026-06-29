@@ -35,7 +35,7 @@ if uploaded_file is not None:
             status.update(label="Шаг 2: Извлечение спецификации искусственным интеллектом...", state="running")
             
             # Направляем запрос на сервер ProxyAPI. Они зеркалируют эндпоинты Google
-            gemini_url = "https://api.proxyapi.ru/google/v1beta/models/gemini-1.5-flash:generateContent"
+            gemini_url = "https://api.proxyapi.ru/google/v1beta/models/gemini-flash-latest:generateContent"
             
             prompt = """Ты — эксперт по анализу проектных спецификаций. 
 Преобразуй переданный PDF-документ (в формате base64) в строгий JSON-массив объектов.
